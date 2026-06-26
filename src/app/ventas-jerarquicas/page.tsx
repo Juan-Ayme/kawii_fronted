@@ -754,7 +754,7 @@ export default function VentasJerarquicasPage() {
                               </div>
                             </div>
                             <div className="flex shrink-0 items-center gap-2">
-                              <HealthBadge paraComprar={dept.paraComprar} saludables={dept.saludables} total={dept.skuCount} />
+                              <HealthBadge paraComprar={dept.paraComprar} saludables={dept.saludables} />
                               <div className="text-right">
                                 <p className="font-mono text-caption tabular-nums font-semibold text-fg">
                                   {money(dept.ventas)}
@@ -827,7 +827,7 @@ export default function VentasJerarquicasPage() {
                                         </div>
                                       </div>
                                       <div className="flex shrink-0 items-center gap-1.5">
-                                        <HealthBadge paraComprar={cat.paraComprar} saludables={cat.saludables} total={cat.skuCount} compact />
+                                        <HealthBadge paraComprar={cat.paraComprar} saludables={cat.saludables} compact />
                                         <div className="text-right">
                                           <p className="font-mono text-[0.65rem] tabular-nums font-semibold text-fg">
                                             {money(cat.ventas)}
@@ -888,7 +888,7 @@ export default function VentasJerarquicasPage() {
                                                 </div>
                                               </div>
                                               <div className="flex shrink-0 items-center gap-1.5">
-                                                <HealthBadge paraComprar={subcat.paraComprar} saludables={subcat.saludables} total={subcat.skuCount} compact />
+                                                <HealthBadge paraComprar={subcat.paraComprar} saludables={subcat.saludables} compact />
                                                 <div className="text-right">
                                                   <p className="font-mono text-[0.6rem] tabular-nums font-semibold text-fg">
                                                     {money(subcat.ventas)}
