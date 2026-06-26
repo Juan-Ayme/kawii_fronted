@@ -29,7 +29,7 @@ import { money, moneyCompact, num, num2, pct } from "@/lib/format";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { LoadingState, ErrorState, EmptyState } from "@/components/ui/states";
+import { LoadingState, ErrorState } from "@/components/ui/states";
 import { getClassificationMeta, SmoothSparkline, shortClasif } from "@/components/ui/classification";
 import { ProductDetailPanel } from "@/components/product-detail-panel";
 import { type BadgeTone } from "@/components/ui/badge";
@@ -203,7 +203,7 @@ interface DeptNode {
 }
 
 /* ─── Health helpers ─── */
-function HealthBadge({ paraComprar, saludables, total, compact }: { paraComprar: number; saludables: number; total: number; compact?: boolean }) {
+function HealthBadge({ paraComprar, saludables, compact }: { paraComprar: number; saludables: number; compact?: boolean }) {
   // Solo mostrar la alerta si la cantidad de productos para comprar es MAYOR a la cantidad de productos saludables
   const isWorseThanHealthy = paraComprar > saludables;
   
@@ -491,11 +491,13 @@ export default function VentasJerarquicasPage() {
   // Auto-expandir cuando hay búsqueda
   useEffect(() => {
     if (busqueda && busqueda.length >= 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setExpandedDeptos((prev) => {
         const next = new Set(prev);
         jerarquia.forEach((d) => next.add(d.name));
         return next;
       });
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setExpandedCats((prev) => {
         const next = new Set(prev);
         jerarquia.forEach((d) => {
@@ -582,8 +584,6 @@ export default function VentasJerarquicasPage() {
       .sort((a, b) => ventasDeRow(b) - ventasDeRow(a));
   }, [rowsRelevantesBusqueda, deptoSel, catSel, subcatSel]);
 
-  const ventasFiltradas = useMemo(() => skusFiltrados.reduce((a, r) => a + ventasDeRow(r), 0), [skusFiltrados]);
-
   /* ─── Conteos por tab y items del tab activo ─── */
   const tabCounts = useMemo(() => {
     const counts: Record<KanbanCol, number> = {
@@ -609,6 +609,7 @@ export default function VentasJerarquicasPage() {
 
   /* Reset de página cuando cambia el tab o los filtros */
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentPage(1);
   }, [activeTab, deptoSel, catSel, subcatSel, busqueda, fStock, fDias, fMesIngreso, fXYZ, fTendencia, fCobertura]);
 
@@ -1253,93 +1254,7 @@ function ProgressBar({
   );
 }
 
-/* ─────────────────────────── BreadcrumbNav ─────────────────────────── */
-
-function BreadcrumbNav({
-  segments,
-}: {
-  segments: { label: string; onClick: () => void }[];
-}) {
-  return (
-    <nav className="flex items-center gap-1" aria-label="Breadcrumb">
-      {segments.map((seg, i) => {
-        const isLast = i === segments.length - 1;
-        return (
-          <span key={i} className="flex items-center gap-1">
-            {i > 0 && (
-              <ChevronRight className="h-3 w-3 text-faint" />
-            )}
-            {isLast ? (
-              <span className="text-body font-semibold text-fg">
-                {seg.label}
-              </span>
-            ) : (
-              <button
-                onClick={seg.onClick}
-                className="text-body font-medium text-muted transition-colors duration-[var(--duration-fast)] hover:text-fg"
-              >
-                {seg.label}
-              </button>
-            )}
-          </span>
-        );
-      })}
-    </nav>
-  );
-}
-
-/* ─────────────────────────── BucketChip ─────────────────────────── */
-
-const TONE_STYLES: Record<BadgeTone, string> = {
-  neutral: "border-border-soft bg-surface-2 text-muted",
-  primary: "border-primary/30 bg-primary/12 text-primary",
-  success: "border-success/30 bg-success/12 text-success",
-  warning: "border-warning/30 bg-warning/12 text-warning",
-  danger: "border-danger/30 bg-danger/12 text-danger",
-  info: "border-info/30 bg-info/12 text-info",
-  violet: "border-violet/30 bg-violet/12 text-violet",
-};
-
-function BucketChip({
-  active,
-  onClick,
-  Icon,
-  label,
-  count,
-  tone,
-}: {
-  active: boolean;
-  onClick: () => void;
-  Icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  count: number;
-  tone: BadgeTone;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border px-2 py-1",
-        "text-[0.65rem] font-semibold",
-        "transition-[background,color,border-color,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-premium)]",
-        active
-          ? TONE_STYLES[tone] + " shadow-card"
-          : "border-border-soft bg-surface text-muted hover:bg-surface-2",
-      )}
-    >
-      <Icon className="h-3 w-3" />
-      <span>{label}</span>
-      <span
-        className={cn(
-          "rounded-sm px-1 py-px text-[0.6rem] font-bold tabular-nums",
-          active ? "bg-black/20" : "bg-surface-3 text-fg",
-        )}
-      >
-        {num(count)}
-      </span>
-    </button>
-  );
-}
+/* (Removed unused BreadcrumbNav and BucketChip) */
 
 /* ─────────────────────────── ProductCard ─────────────────────────── */
 

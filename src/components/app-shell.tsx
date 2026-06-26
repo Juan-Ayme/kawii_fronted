@@ -266,6 +266,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Restaurar preferencia de colapso del sidebar.
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSidebarCollapsed(
       localStorage.getItem("kawii_sidebar_collapsed") === "true",
     );

@@ -122,12 +122,16 @@ export function DateRangeSelect({
   });
 
   // Sync draft when parent value changes.
-  useEffect(() => setDraft(value), [value]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDraft(value);
+  }, [value]);
 
   // When opening, navigate calendar to the from-date month.
   useEffect(() => {
     if (open) {
       const from = startDateFromDays(draft);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setViewMonth(new Date(from.getFullYear(), from.getMonth(), 1));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

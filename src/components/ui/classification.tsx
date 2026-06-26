@@ -84,7 +84,8 @@ export function SmoothSparkline({ v90, v30, p30, width = 70, height = 24 }: { v9
   const areaPath = `${path} L ${w},${h} L 0,${h} Z`;
   
   const trendColor = p30 > v90 * 1.1 ? "#2dd4a7" : p30 < v90 * 0.8 ? "#f5a623" : "#38bdf8";
-  const id = `grad-${trendColor.replace('#', '')}-${Math.random().toString(36).substr(2, 5)}`;
+  const reactId = React.useId();
+  const id = `grad-${trendColor.replace('#', '')}-${reactId}`;
 
   return (
     <svg width={w} height={h} className="overflow-visible">
