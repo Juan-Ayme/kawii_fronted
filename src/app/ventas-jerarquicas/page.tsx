@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback, useDeferredValue } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { animate, stagger } from "animejs";
 import {
@@ -34,7 +34,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { getMatrix, matrixExcelUrl } from "@/lib/api";
-import { money, moneyCompact, num, num2, pct } from "@/lib/format";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,20 +43,12 @@ import { ProductDetailPanel } from "@/components/product-detail-panel";
 import { type BadgeTone } from "@/components/ui/badge";
 import { useSucursal } from "@/components/sucursal-context";
 import { cn } from "@/lib/utils";
+import { s, n, money, moneyCompact, num, num2, pct } from "@/lib/format";
+import { FilterChip } from "@/components/ui/filter-chip";
+import { buildTree, TreeNode } from "@/lib/hierarchy";
 
 type Row = Record<string, unknown>;
-const s = (v: unknown): string => (v == null ? "" : String(v));
-const n = (v: unknown): number => {
-  if (v == null || v === "") return 0;
-  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-  const str = String(v);
-  const m = str.match(/-?\d+(\.\d+)?/);
-  if (m) {
-    const p = parseFloat(m[0]);
-    return Number.isFinite(p) ? p : 0;
-  }
-  return 0;
-};
+
 
 /* 5 Columnas del Action Board (Kanban) */
 export type KanbanCol =
@@ -177,39 +168,7 @@ export function getKanbanColumn(row: Row): KanbanCol {
   return "liquidar";
 }
 
-/* ─────────────────── Tipos para el árbol jerárquico ─────────────────── */
 
-interface SubCatNode {
-  name: string;
-  ventas: number;
-  tickets: number;
-  skuCount: number;
-  pct: number;
-  paraComprar: number;
-  saludables: number;
-}
-
-interface CatNode {
-  name: string;
-  ventas: number;
-  tickets: number;
-  skuCount: number;
-  pct: number;
-  paraComprar: number;
-  saludables: number;
-  subcats: SubCatNode[];
-}
-
-interface DeptNode {
-  name: string;
-  ventas: number;
-  tickets: number;
-  skuCount: number;
-  pct: number;
-  paraComprar: number;
-  saludables: number;
-  cats: CatNode[];
-}
 
 /* ─── Health helpers ─── */
 function HealthBadge({ paraComprar, saludables, compact }: { paraComprar: number; saludables: number; compact?: boolean }) {
@@ -234,60 +193,14 @@ function HealthBadge({ paraComprar, saludables, compact }: { paraComprar: number
   );
 }
 
-/* ═════════════════════════════════════════════════════════════════════ */
 
-/* ─────────────────────────── FilterChip ─────────────────────────── */
-function FilterChip({
-  label,
-  count,
-  active,
-  onClick,
-  tone = "primary",
-}: {
-  label: string;
-  count?: number;
-  active: boolean;
-  onClick: () => void;
-  tone?: "primary" | "success" | "warning" | "danger" | "info" | "violet";
-}) {
-  const toneStyles: Record<string, string> = {
-    primary: "border-primary/50 bg-primary/10 text-primary shadow-[0_0_12px_rgba(99,102,241,0.2)] backdrop-blur-md",
-    success: "border-success/50 bg-success/10 text-success shadow-[0_0_12px_rgba(45,212,167,0.2)] backdrop-blur-md",
-    warning: "border-warning/50 bg-warning/10 text-warning shadow-[0_0_12px_rgba(245,166,35,0.2)] backdrop-blur-md",
-    danger: "border-danger/50 bg-danger/10 text-danger shadow-[0_0_12px_rgba(240,85,109,0.2)] backdrop-blur-md",
-    info: "border-info/50 bg-info/10 text-info shadow-[0_0_12px_rgba(56,189,248,0.2)] backdrop-blur-md",
-    violet: "border-violet/50 bg-violet/10 text-violet shadow-[0_0_12px_rgba(167,139,250,0.2)] backdrop-blur-md",
-  };
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "group inline-flex flex-1 sm:flex-none justify-center items-center gap-1.5 rounded-lg border px-2.5 py-1.5",
-        "text-xs font-medium whitespace-nowrap",
-        "transition-all duration-[var(--duration-base)] ease-[var(--ease-premium)]",
-        active
-          ? toneStyles[tone]
-          : "border-border/40 bg-surface-2/40 text-muted hover:border-border hover:bg-surface-3/60 hover:text-fg backdrop-blur-sm hover:scale-[1.02]",
-      )}
-    >
-      <span>{label}</span>
-      {/* count !== undefined && (
-        <span className={cn(
-          "rounded-md px-1.5 py-0.5 text-[0.6rem] font-semibold tabular-nums transition-colors",
-          active ? "bg-black/20 text-fg" : "bg-surface-3/50 text-faint group-hover:bg-surface-4/80 group-hover:text-muted",
-        )}>
-          {num(count)}
-        </span>
-      ) */}
-    </button>
-  );
-}
 
 /* ═══════════════════════════════════════════════════════════════════════ */
 
 export default function VentasJerarquicasPage() {
   const { sucursalName } = useSucursal();
   const [busqueda, setBusqueda] = useState("");
+  const deferredBusqueda = useDeferredValue(busqueda);
   const [deptoSel, setDeptoSel] = useState<string | null>(null);
   const [catSel, setCatSel] = useState<string | null>(null);
   const [subcatSel, setSubcatSel] = useState<string | null>(null);
@@ -348,162 +261,78 @@ export default function VentasJerarquicasPage() {
   }, [allRows]);
 
   const rowsRelevantesBusqueda = useMemo(() => {
-    let rows = allRows;
+    const dBusq = deferredBusqueda ? deferredBusqueda.toLowerCase() : "";
 
-    if (fStock !== "todos") {
-      rows = rows.filter(r => fStock === "con_stock" ? n(r["Stock Disp"]) > 0 : n(r["Stock Disp"]) <= 0);
-    }
-    if (fDias !== "todos") {
-      const minDias = parseInt(fDias, 10);
-      rows = rows.filter(r => n(r["Días sin Vender"]) >= minDias);
-    }
-    if (fMesIngreso.size > 0) {
-      rows = rows.filter(r => {
+    return allRows.filter((r) => {
+      // 1. Stock
+      if (fStock !== "todos") {
+        const sd = n(r["Stock Disp"]);
+        if (fStock === "con_stock" && sd <= 0) return false;
+        if (fStock === "sin_stock" && sd > 0) return false;
+      }
+      
+      // 2. Dias
+      if (fDias !== "todos") {
+        const minDias = parseInt(fDias, 10);
+        if (n(r["Días sin Vender"]) < minDias) return false;
+      }
+      
+      // 3. Mes Ingreso
+      if (fMesIngreso.size > 0) {
         const d = s(r["Últ. Recepción"]);
-        return d && d.length >= 7 && fMesIngreso.has(d.substring(0, 7));
-      });
-    }
-    if (fXYZ !== "todos") {
-      rows = rows.filter(r => s(r["XYZ"]).toUpperCase().startsWith(fXYZ));
-    }
-    if (fTendencia !== "todos") {
-      rows = rows.filter(r => {
+        if (!d || d.length < 7 || !fMesIngreso.has(d.substring(0, 7))) return false;
+      }
+      
+      // 4. XYZ
+      if (fXYZ !== "todos") {
+        if (!s(r["XYZ"]).toUpperCase().startsWith(fXYZ)) return false;
+      }
+      
+      // 5. Tendencia
+      if (fTendencia !== "todos") {
         const t = s(r["Tendencia"]).toUpperCase();
-        if (fTendencia === "creciendo") return t.includes("CRECIENDO");
-        if (fTendencia === "bajando") return t.includes("BAJANDO");
-        return t.includes("ESTABLE") || t === "" || (!t.includes("CRECIENDO") && !t.includes("BAJANDO"));
-      });
-    }
-    if (fCobertura !== "todos") {
-      rows = rows.filter(r => {
+        if (fTendencia === "creciendo" && !t.includes("CRECIENDO")) return false;
+        if (fTendencia === "bajando" && !t.includes("BAJANDO")) return false;
+        if (fTendencia === "estable" && (t.includes("CRECIENDO") || t.includes("BAJANDO"))) return false;
+      }
+      
+      // 6. Cobertura
+      if (fCobertura !== "todos") {
         const cob = n(r["Cobertura"]);
-        if (fCobertura === "critica_10") return cob <= 10;
-        if (fCobertura === "critica") return cob < 15;
-        if (fCobertura === "baja") return cob >= 15 && cob <= 30;
-        return cob > 30;
-      });
-    }
-    if (busqueda) {
-      const lowerB = busqueda.toLowerCase();
-      rows = rows.filter((r) => 
-        s(r["Producto"]).toLowerCase().includes(lowerB) ||
-        s(r["Código SKU"]).toLowerCase().includes(lowerB) ||
-        s(r["Clasificación"]).toLowerCase().includes(lowerB)
-      );
-    }
-    return rows;
-  }, [allRows, busqueda, fStock, fDias, fMesIngreso, fXYZ, fTendencia, fCobertura]);
+        if (fCobertura === "critica_10" && cob > 10) return false;
+        if (fCobertura === "critica" && cob >= 15) return false;
+        if (fCobertura === "baja" && (cob < 15 || cob > 30)) return false;
+        if (fCobertura === "ok" && cob <= 30) return false;
+      }
+      
+      // 7. Búsqueda (Costo elevado de evaluación de string, al final)
+      if (dBusq) {
+        if (
+          !s(r["Producto"]).toLowerCase().includes(dBusq) &&
+          !s(r["Código SKU"]).toLowerCase().includes(dBusq) &&
+          !s(r["Clasificación"]).toLowerCase().includes(dBusq)
+        ) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+  }, [allRows, deferredBusqueda, fStock, fDias, fMesIngreso, fXYZ, fTendencia, fCobertura]);
 
   /* ─── Construir árbol jerárquico ─── */
-  const jerarquia = useMemo<DeptNode[]>(() => {
-    const deptMap = new Map<
-      string,
-      {
-        ventas: number;
-        tickets: number;
-        skuCount: number;
-        paraComprar: number;
-        saludables: number;
-        catMap: Map<
-          string,
-          {
-            ventas: number;
-            tickets: number;
-            skuCount: number;
-            paraComprar: number;
-            saludables: number;
-            subcatMap: Map<
-              string,
-              { ventas: number; tickets: number; skuCount: number; paraComprar: number; saludables: number; }
-            >;
-          }
-        >;
-      }
-    >();
-
-    for (const r of rowsRelevantesBusqueda) {
-      const dep = s(r["Departamento"]) || "—";
-      const cat = s(r["Categoría"]) || "Sin categoría";
-      const subcat = s(r["Subcategoría"]) || "Sin subcategoría";
-      const v = ventasDeRow(r);
-      const t = unds90(r);
-      const kanbanCol = getKanbanColumn(r);
-      const isComprar = kanbanCol === "comprar" ? 1 : 0;
-      const isSaludable = kanbanCol === "vigilar" ? 1 : 0;
-
-      if (!deptMap.has(dep))
-        deptMap.set(dep, { ventas: 0, tickets: 0, skuCount: 0, paraComprar: 0, saludables: 0, catMap: new Map() });
-      const d = deptMap.get(dep)!;
-      d.ventas += v;
-      d.tickets += t;
-      d.skuCount += 1;
-      d.paraComprar += isComprar;
-      d.saludables += isSaludable;
-
-      if (!d.catMap.has(cat))
-        d.catMap.set(cat, { ventas: 0, tickets: 0, skuCount: 0, paraComprar: 0, saludables: 0, subcatMap: new Map() });
-      const c = d.catMap.get(cat)!;
-      c.ventas += v;
-      c.tickets += t;
-      c.skuCount += 1;
-      c.paraComprar += isComprar;
-      c.saludables += isSaludable;
-
-      if (!c.subcatMap.has(subcat))
-        c.subcatMap.set(subcat, { ventas: 0, tickets: 0, skuCount: 0, paraComprar: 0, saludables: 0 });
-      const sc = c.subcatMap.get(subcat)!;
-      sc.ventas += v;
-      sc.tickets += t;
-      sc.skuCount += 1;
-      sc.paraComprar += isComprar;
-      sc.saludables += isSaludable;
-    }
-
-    const totalVentas = [...deptMap.values()].reduce((a, d) => a + d.ventas, 0);
-
-    return [...deptMap.entries()]
-      .sort(([, a], [, b]) => b.ventas - a.ventas)
-      .map(([name, d]) => ({
-        name,
-        ventas: d.ventas,
-        tickets: d.tickets,
-        skuCount: d.skuCount,
-        paraComprar: d.paraComprar,
-        saludables: d.saludables,
-        pct: totalVentas > 0 ? d.ventas / totalVentas : 0,
-        cats: [...d.catMap.entries()]
-          .sort(([, a], [, b]) => b.ventas - a.ventas)
-          .map(([catName, c]) => ({
-            name: catName,
-            ventas: c.ventas,
-            tickets: c.tickets,
-            skuCount: c.skuCount,
-            paraComprar: c.paraComprar,
-            saludables: c.saludables,
-            pct: d.ventas > 0 ? c.ventas / d.ventas : 0,
-            subcats: [...c.subcatMap.entries()]
-              .sort(([, a], [, b]) => b.ventas - a.ventas)
-              .map(([scName, sc]) => ({
-                name: scName,
-                ventas: sc.ventas,
-                tickets: sc.tickets,
-                skuCount: sc.skuCount,
-                paraComprar: sc.paraComprar,
-                saludables: sc.saludables,
-                pct: c.ventas > 0 ? sc.ventas / c.ventas : 0,
-              })),
-          })),
-      }));
+  const jerarquia = useMemo<TreeNode[]>(() => {
+    return buildTree(rowsRelevantesBusqueda);
   }, [rowsRelevantesBusqueda]);
 
   const totalGeneral = useMemo(
-    () => jerarquia.reduce((a, d) => a + d.ventas, 0),
-    [jerarquia],
+    () => jerarquia.reduce((a, d) => a + d.ventaSoles, 0),
+    [jerarquia]
   );
 
   // Auto-expandir cuando hay búsqueda
   useEffect(() => {
-    if (busqueda && busqueda.length >= 2) {
+    if (deferredBusqueda && deferredBusqueda.length >= 2) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setExpandedDeptos((prev) => {
         const next = new Set(prev);
@@ -514,12 +343,14 @@ export default function VentasJerarquicasPage() {
       setExpandedCats((prev) => {
         const next = new Set(prev);
         jerarquia.forEach((d) => {
-          d.cats.forEach((c) => next.add(`${d.name}::${c.name}`));
+          d.children.forEach((c) => {
+            next.add(`${d.name}::${c.name}`);
+          });
         });
         return next;
       });
     }
-  }, [busqueda, jerarquia]);
+  }, [deferredBusqueda, jerarquia]);
 
   /* ─── Toggle helpers ─── */
   const toggleDepto = (name: string) => {
@@ -734,7 +565,7 @@ export default function VentasJerarquicasPage() {
                   </span>
                 </button>
 
-                                                <ul className="mt-1 flex max-h-[65vh] flex-col gap-1 overflow-y-auto pr-1 custom-scrollbar">
+                <ul className="mt-1 flex max-h-[65vh] flex-col gap-1 overflow-y-auto pr-1 custom-scrollbar">
                   {jerarquia.map((dept, deptIdx) => {
                     const isDeptSel = deptoSel === dept.name;
                     const isDeptExpanded = expandedDeptos.has(dept.name);
@@ -776,27 +607,20 @@ export default function VentasJerarquicasPage() {
                                 </p>
                               </div>
                               <div className="flex items-center gap-1.5 shrink-0">
-                                <HealthBadge paraComprar={dept.paraComprar} saludables={dept.saludables} compact={!isDeptSel} />
-                                <p className="font-mono text-[0.75rem] tabular-nums font-bold text-fg shrink-0">
-                                  {money(dept.ventas)}
-                                </p>
+                                <p className="text-sm font-mono font-semibold text-fg group-hover:text-primary transition-colors">{moneyCompact(dept.ventaSoles)}</p>
+                                <p className="text-[10px] text-faint">{pct(dept.pct)}</p>
                               </div>
                             </div>
                             
-                            <div className="flex items-center gap-2 w-full pl-4.5 mt-0.5 mb-1 pr-1">
-                               <ProgressBar pct={dept.pct} tone={deptTone.bar} />
-                               <div className="flex items-center gap-1.5 text-[0.65rem] text-faint shrink-0 tabular-nums">
-                                 <span>{pct(dept.pct * 100)}</span>
-                                 <span>•</span>
-                                 <span>{num(dept.skuCount)} SKUs</span>
-                               </div>
+                            <div className="pl-6 flex items-center gap-2 h-6 opacity-90 group-hover:opacity-100 transition-opacity">
+                               <HealthBadge paraComprar={dept.paraComprar ?? 0} saludables={dept.saludables ?? 0} />
                             </div>
                           </button>
                         </div>
 
-                        {isDeptExpanded && dept.cats.length > 0 && (
-                          <ul className="ml-3.5 mt-1 mb-2 animate-tree-expand overflow-hidden border-l border-white/5 pl-1.5 flex flex-col gap-0.5">
-                            {dept.cats.map((cat) => {
+                        {isDeptExpanded && dept.children.length > 0 && (
+                          <ul className="pl-3 mt-1.5 flex flex-col gap-1 relative before:absolute before:left-2 before:top-2 before:bottom-2 before:w-px before:bg-border-soft">
+                            {dept.children.map((cat) => {
                               const catKey = `${dept.name}::${cat.name}`;
                               const isCatSel = isDeptSel && catSel === cat.name;
                               const isCatExpanded = expandedCats.has(catKey);
@@ -837,27 +661,20 @@ export default function VentasJerarquicasPage() {
                                           </p>
                                         </div>
                                         <div className="flex items-center gap-1.5 shrink-0">
-                                          <HealthBadge paraComprar={cat.paraComprar} saludables={cat.saludables} compact />
-                                          <p className="font-mono text-[0.7rem] tabular-nums font-semibold text-fg/90 shrink-0">
-                                            {money(cat.ventas)}
-                                          </p>
+                                            <p className="text-xs font-mono font-medium text-fg group-hover:text-primary transition-colors">{moneyCompact(cat.ventaSoles)}</p>
+                                            <p className="text-[9px] text-faint">{pct(cat.pct)}</p>
                                         </div>
                                       </div>
                                       
-                                      <div className="flex items-center gap-2 w-full pl-5 mb-1.5 pr-1">
-                                         <ProgressBar pct={cat.pct} tone="info" />
-                                         <div className="flex items-center gap-1.5 text-[0.6rem] text-faint shrink-0 tabular-nums">
-                                            <span>{pct(cat.pct * 100)}</span>
-                                            <span>•</span>
-                                            <span>{num(cat.skuCount)} SKUs</span>
-                                         </div>
+                                      <div className="pl-[22px] flex items-center gap-2 h-5 opacity-80 group-hover:opacity-100 transition-opacity">
+                                        <HealthBadge paraComprar={cat.paraComprar ?? 0} saludables={cat.saludables ?? 0} />
                                       </div>
                                     </button>
                                   </div>
 
-                                  {isCatExpanded && cat.subcats.length > 0 && (
-                                    <ul className="ml-3 mt-0.5 mb-1 animate-tree-expand overflow-hidden border-l border-white/5 pl-1.5 flex flex-col gap-0.5">
-                                      {cat.subcats.map((subcat) => {
+                                  {isCatExpanded && cat.children.length > 0 && (
+                                    <ul className="pl-3 mt-1 flex flex-col gap-0.5 relative before:absolute before:left-2 before:top-2 before:bottom-2 before:w-px before:bg-border-soft/60">
+                                      {cat.children.map((subcat) => {
                                         const isSubcatSel = isCatSel && subcatSel === subcat.name;
 
                                         return (
@@ -879,11 +696,9 @@ export default function VentasJerarquicasPage() {
                                                     {subcat.name}
                                                   </p>
                                                 </div>
-                                                <div className="flex items-center gap-1.5 shrink-0">
-                                                  <HealthBadge paraComprar={subcat.paraComprar} saludables={subcat.saludables} compact />
-                                                  <p className="font-mono text-[0.65rem] tabular-nums font-semibold text-fg/90 shrink-0">
-                                                    {money(subcat.ventas)}
-                                                  </p>
+                                                <div className="text-right">
+                                                  <p className="text-[11px] font-mono font-medium text-fg">{moneyCompact(subcat.ventaSoles)}</p>
+                                                  <p className="text-[9px] text-faint">{pct(subcat.pct)}</p>
                                                 </div>
                                               </div>
                                               
@@ -892,7 +707,7 @@ export default function VentasJerarquicasPage() {
                                                 <div className="flex items-center gap-1 text-[0.55rem] text-faint shrink-0 tabular-nums">
                                                   <span>{pct(subcat.pct * 100)}</span>
                                                   <span>•</span>
-                                                  <span>{num(subcat.skuCount)} SKUs</span>
+                                                  <span>{num(subcat.skus)} SKUs</span>
                                                 </div>
                                               </div>
                                             </button>

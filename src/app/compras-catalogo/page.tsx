@@ -11,7 +11,7 @@
  * se evaluará en una fase posterior (requiere nueva tabla + endpoints POST).
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useDeferredValue } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -77,6 +77,8 @@ import { Pagination } from "@/components/ui/data-table";
 import { SkuHistoryChart } from "@/components/charts/sku-history-chart";
 import { cn } from "@/lib/utils";
 import type { ComprasCatalogoSku } from "@/lib/types";
+import { FilterChip } from "@/components/ui/filter-chip";
+import { buildTree, TreeNode } from "@/lib/hierarchy";
 
 /* ────────────────────────────────────────────────────────────
  * Selección jerárquica — qué nodo del árbol Depto/Cat/Subcat está activo.
@@ -93,15 +95,7 @@ type Selection = {
 
 const ROOT_SELECTION: Selection = { dept: null, cat: null, subcat: null };
 
-/* Nodo del árbol jerárquico construido en cliente desde la lista de SKUs. */
-type TreeNode = {
-  name: string;
-  skus: number;
-  ventaSoles: number;
-  criticos: number;
-  altas: number;
-  children: TreeNode[];
-};
+
 
 type SeverityFilter = "todas" | "critico" | "alta";
 
@@ -142,6 +136,7 @@ export default function ComprasCatalogoPage() {
 
   const [selection, setSelection] = useState<Selection>(ROOT_SELECTION);
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [selectedSku, setSelectedSku] = useState<ComprasCatalogoSku | null>(null);
   const [offset, setOffset] = useState(0);
   const limit = 10;
@@ -177,7 +172,7 @@ export default function ComprasCatalogoPage() {
   // Filtrado en cliente: severidad + selección jerárquica + búsqueda.
   const filteredSkus = useMemo<ComprasCatalogoSku[]>(() => {
     const all = query.data?.skus ?? [];
-    const s = search.trim().toLowerCase();
+    const s = deferredSearch.trim().toLowerCase();
     return all.filter((sku) => {
       if (fSeveridad === "critico" && !sku.severidad.includes("Crítico")) return false;
       if (fSeveridad === "alta" && !sku.severidad.includes("Alta")) return false;
@@ -201,7 +196,7 @@ export default function ComprasCatalogoPage() {
       }
       return true;
     });
-  }, [query.data?.skus, fSeveridad, fTendencia, fStockAlmacen, selection, search]);
+  }, [query.data?.skus, fSeveridad, fTendencia, fStockAlmacen, selection, deferredSearch]);
 
   // KPIs locales del nivel seleccionado (recalculados sobre el subset jerárquico,
   // ignorando severidad/búsqueda para que reflejen el "size" del nodo).
@@ -261,6 +256,8 @@ export default function ComprasCatalogoPage() {
         description: "Decisión guardada.",
       });
       qc.invalidateQueries({ queryKey: ["purchase-decisions"] });
+      // Sincronizar también la vista principal del catálogo
+      qc.invalidateQueries({ queryKey: ["compras-catalogo"] });
     },
     onError: (err: Error, vars) => {
       toast.error(`Error guardando decisión · ${vars.sku.producto}`, {
@@ -660,64 +657,6 @@ function SeverityTab({
  * Helpers de jerarquía: construir y navegar el árbol Depto → Cat → Subcat
  * ════════════════════════════════════════════════════════════════════════ */
 
-function buildTree(skus: ComprasCatalogoSku[]): TreeNode[] {
-  // Map<dept, Map<cat, Map<subcat, accum>>>
-  const deptMap = new Map<string, Map<string, Map<string, TreeNode>>>();
-
-  for (const sku of skus) {
-    const d = sku.departamento || "Sin departamento";
-    const c = sku.categoria || "Sin categoría";
-    const s = sku.subcategoria || "Sin subcategoría";
-
-    if (!deptMap.has(d)) deptMap.set(d, new Map());
-    const catMap = deptMap.get(d)!;
-    if (!catMap.has(c)) catMap.set(c, new Map());
-    const subMap = catMap.get(c)!;
-    if (!subMap.has(s))
-      subMap.set(s, {
-        name: s,
-        skus: 0,
-        ventaSoles: 0,
-        criticos: 0,
-        altas: 0,
-        children: [],
-      });
-    const node = subMap.get(s)!;
-    node.skus += 1;
-    node.ventaSoles += sku.vendido_sku_soles;
-    if (sku.severidad.includes("Crítico")) node.criticos += 1;
-    if (sku.severidad.includes("Alta")) node.altas += 1;
-  }
-
-  // Convertir maps a arrays + agregar totales por nivel.
-  const tree: TreeNode[] = [];
-  for (const [deptName, catMap] of deptMap.entries()) {
-    const cats: TreeNode[] = [];
-    for (const [catName, subMap] of catMap.entries()) {
-      const subs = [...subMap.values()].sort(
-        (a, b) => b.ventaSoles - a.ventaSoles,
-      );
-      cats.push({
-        name: catName,
-        skus: subs.reduce((acc, s) => acc + s.skus, 0),
-        ventaSoles: subs.reduce((acc, s) => acc + s.ventaSoles, 0),
-        criticos: subs.reduce((acc, s) => acc + s.criticos, 0),
-        altas: subs.reduce((acc, s) => acc + s.altas, 0),
-        children: subs,
-      });
-    }
-    cats.sort((a, b) => b.ventaSoles - a.ventaSoles);
-    tree.push({
-      name: deptName,
-      skus: cats.reduce((acc, c) => acc + c.skus, 0),
-      ventaSoles: cats.reduce((acc, c) => acc + c.ventaSoles, 0),
-      criticos: cats.reduce((acc, c) => acc + c.criticos, 0),
-      altas: cats.reduce((acc, c) => acc + c.altas, 0),
-      children: cats,
-    });
-  }
-  return tree.sort((a, b) => b.ventaSoles - a.ventaSoles);
-}
 
 function scopeTitle(sel: Selection): string {
   if (sel.subcat) return sel.subcat;
@@ -1710,38 +1649,4 @@ function Stat({
 }
 
 
-function FilterChip({
-  label,
-  active,
-  onClick,
-  tone = "primary",
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  tone?: "primary" | "success" | "warning" | "danger" | "info" | "violet";
-}) {
-  const toneStyles: Record<string, string> = {
-    primary: "border-primary/50 bg-primary/10 text-primary shadow-[0_0_12px_rgba(99,102,241,0.2)] backdrop-blur-md",
-    success: "border-success/50 bg-success/10 text-success shadow-[0_0_12px_rgba(45,212,167,0.2)] backdrop-blur-md",
-    warning: "border-warning/50 bg-warning/10 text-warning shadow-[0_0_12px_rgba(245,166,35,0.2)] backdrop-blur-md",
-    danger: "border-danger/50 bg-danger/10 text-danger shadow-[0_0_12px_rgba(240,85,109,0.2)] backdrop-blur-md",
-    info: "border-info/50 bg-info/10 text-info shadow-[0_0_12px_rgba(56,189,248,0.2)] backdrop-blur-md",
-    violet: "border-violet/50 bg-violet/10 text-violet shadow-[0_0_12px_rgba(167,139,250,0.2)] backdrop-blur-md",
-  };
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "group inline-flex flex-1 sm:flex-none justify-center items-center gap-1.5 rounded-lg border px-2.5 py-1.5",
-        "text-xs font-medium whitespace-nowrap",
-        "transition-all duration-[var(--duration-base)] ease-[var(--ease-premium)]",
-        active
-          ? toneStyles[tone]
-          : "border-border/40 bg-surface-2/40 text-muted hover:border-border hover:bg-surface-3/60 hover:text-fg backdrop-blur-sm hover:scale-[1.02]",
-      )}
-    >
-      <span>{label}</span>
-    </button>
-  );
-}
+
