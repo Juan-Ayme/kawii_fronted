@@ -110,3 +110,19 @@ export function autoCell(key: string, value: unknown): string {
   }
   return String(value);
 }
+
+/** Convierte a string seguro. Usa esto en lugar del `s` duplicado. */
+export const s = (v: unknown): string => (v == null ? "" : String(v));
+
+/** Convierte a número seguro (retorna 0 si falla). Usa esto en lugar del `n` duplicado. */
+export const n = (v: unknown): number => {
+  if (v == null || v === "") return 0;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  const str = String(v);
+  const m = str.match(/-?\d+(\.\d+)?/);
+  if (m) {
+    const p = parseFloat(m[0]);
+    return Number.isFinite(p) ? p : 0;
+  }
+  return 0;
+};

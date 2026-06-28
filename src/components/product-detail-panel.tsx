@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import dynamic from "next/dynamic";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
@@ -19,39 +18,30 @@ import {
   Package,
   Box,
   ShoppingCart,
+  Target,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { money, num, num2, pct, dateShort } from "@/lib/format";
-import { getSkuHistory } from "@/lib/api";
+import { money, num, num2, pct, dateShort, s, n } from "@/lib/format";
+import { getSkuHistory, getSubcategories, setProductSubcategory } from "@/lib/api";
 import { Drawer } from "@/components/ui/drawer";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { KpiStat } from "@/components/ui/kpi-stat";
 import { MetricBar, MetricGauge } from "@/components/ui/metric-gauge";
 import {
   getClassificationMeta,
   shortClasif,
 } from "@/components/ui/classification";
-const SkuHistoryChart = dynamic(() => import("@/components/charts/sku-history-chart").then(mod => mod.SkuHistoryChart), { ssr: false });
+import { SkuHistoryChart } from "@/components/charts/sku-history-chart";
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
-const s = (v: unknown): string => (v == null ? "" : String(v));
-const n = (v: unknown): number => {
-  if (v == null || v === "") return 0;
-  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-  const str = String(v);
-  const m = str.match(/-?\d+(\.\d+)?/);
-  if (m) {
-    const p = parseFloat(m[0]);
-    return Number.isFinite(p) ? p : 0;
-  }
-  return 0;
-};
-
-function generateProductInsight(row: Record<string, unknown>): { text: string; tone: "success" | "warning" | "danger" | "info" } {
+function generateProductInsight(row: any): { text: string; tone: "success" | "warning" | "danger" | "info" } {
   const rotacion = n(row["% Rotación Stock"]);
   const clasificacion = s(row["Clasificación"]);
   const diasAgotado = n(row["Días Agotado"]);
@@ -134,51 +124,7 @@ function SectionTitle({
   );
 }
 
-/* ── KPI mini card ─────────────────────────────────────────── */
 
-function KpiMini({
-  label,
-  value,
-  icon: Icon,
-  className,
-  tone = "neutral",
-}: {
-  label: string;
-  value: React.ReactNode;
-  icon?: React.ElementType;
-  className?: string;
-  tone?: "neutral" | "success" | "danger" | "warning";
-}) {
-  const toneBg = {
-    neutral: "bg-surface-2",
-    success: "bg-success/10",
-    danger: "bg-danger/10",
-    warning: "bg-warning/10",
-  }[tone];
-  const toneIcon = {
-    neutral: "text-muted",
-    success: "text-success",
-    danger: "text-danger",
-    warning: "text-warning",
-  }[tone];
-
-  return (
-    <Card className={cn("relative overflow-hidden p-3 border-border-soft", toneBg, className)}>
-      <div className="flex items-center gap-2 mb-1.5">
-        {Icon && <Icon className={cn("h-4 w-4", toneIcon)} />}
-        <p className="text-[10px] font-bold uppercase tracking-wider text-faint">
-          {label}
-        </p>
-      </div>
-      <p className="font-mono tabular-nums text-body font-black text-fg">
-        {value}
-      </p>
-      {Icon && (
-        <Icon className={cn("absolute -bottom-3 -right-3 h-12 w-12 opacity-5", toneIcon)} />
-      )}
-    </Card>
-  );
-}
 
 /* ── Section divider ───────────────────────────────────────── */
 
@@ -213,6 +159,31 @@ export function ProductDetailPanel({
     retry: false,
   });
 
+  const qc = useQueryClient();
+  const productId = n(row["ID Producto"] ?? row["product_id"] ?? row["id"]);
+  const [edited, setEdited] = useState<string | null>(null);
+
+  const subs = useQuery({
+    queryKey: ["subcategories-all"],
+    queryFn: ({ signal }) => getSubcategories(undefined, signal),
+    enabled: open,
+    staleTime: 5 * 60_000,
+  });
+
+  const mutation = useMutation({
+    mutationFn: (newSubId: number | null) =>
+      setProductSubcategory(productId as number, newSubId),
+    onSuccess: () => {
+      setEdited(null);
+      qc.invalidateQueries({ queryKey: ["product", productId] });
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["products-summary"] });
+      // Forzar recarga de los dashboards principales para reflejar el cambio en los árboles
+      qc.invalidateQueries({ queryKey: ["matrix-04b"] });
+      qc.invalidateQueries({ queryKey: ["compras-catalogo"] });
+    },
+  });
+
   /* ── Classification meta ───────────────────────────────── */
   const clasificacion = s(row["Clasificación"]);
   const classMeta = getClassificationMeta(clasificacion);
@@ -229,6 +200,14 @@ export function ProductDetailPanel({
   let sectionIdx = 0;
   const [showAdvanced, setShowAdvanced] = useState(false);
   const insight = generateProductInsight(row);
+
+  const hasOverride = s(row["Override"]) === "true" || row["has_override"] === true;
+  const currentSubId = (() => {
+    const current = subs.data?.find((s) => s.name === subcategoria);
+    return current ? String(current.id) : "";
+  })();
+  const subId = edited ?? currentSubId;
+  const setSubId = (v: string) => setEdited(v);
 
   return (
     <Drawer
@@ -347,19 +326,49 @@ export function ProductDetailPanel({
           </div>
         </div>
 
-        {/* Sugerencia Transferencia alert */}
-        {sugerencia && (
-          <div className="mt-6 flex items-start gap-3 rounded-xl border border-warning/30 bg-gradient-to-r from-warning/15 to-transparent p-4 shadow-sm relative overflow-hidden">
-            <div className="absolute left-0 top-0 w-1 h-full bg-warning" />
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+
+
+        {/* Override / Clasificación Manual */}
+        {productId > 0 && (
+          <div className="mt-6 flex flex-col gap-3 rounded-xl border border-border-soft bg-surface-2 p-4 shadow-sm">
             <div>
-              <p className="text-sm font-bold text-warning">
-                Sugerencia Operativa
-              </p>
-              <p className="mt-1 text-sm text-warning/90 font-medium">
-                {sugerencia}
-              </p>
+              <p className="text-sm font-semibold text-fg">Reclasificar producto (Override)</p>
+              <p className="text-xs text-muted">Asigna una subcategoría específica. Si se deja vacío, heredará del tipo de producto.</p>
             </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Select
+                value={subId}
+                onChange={(e) => setSubId(e.target.value)}
+                className="flex-1"
+                disabled={subs.isLoading}
+              >
+                <option value="">— Heredar del tipo (sin override) —</option>
+                {(subs.data ?? []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.department_name} / {s.category_name} / {s.name}
+                  </option>
+                ))}
+              </Select>
+              <Button
+                onClick={() => mutation.mutate(subId === "" ? null : Number(subId))}
+                loading={mutation.isPending}
+              >
+                Guardar
+              </Button>
+            </div>
+            {hasOverride && (
+              <button
+                onClick={() => {
+                  setSubId("");
+                  mutation.mutate(null);
+                }}
+                className="inline-flex w-fit items-center gap-1.5 text-xs text-muted hover:text-fg mt-1"
+              >
+                Quitar override
+              </button>
+            )}
+            {mutation.isError && <p className="text-xs text-danger">Error al actualizar.</p>}
+            {mutation.isSuccess && <p className="text-xs text-success">Actualizado.</p>}
           </div>
         )}
       </motion.div>
@@ -371,46 +380,46 @@ export function ProductDetailPanel({
         <SectionTitle icon={BarChart3}>Indicadores Clave</SectionTitle>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {/* Row 1 */}
-          <KpiMini
+          <KpiStat
             label="Ventas 90d"
             value={money(row["Vendido SKU S/"])}
             icon={TrendingUp}
             tone="success"
           />
-          <KpiMini
+          <KpiStat
             label="Unds Vendidas"
             value={num(row["Unds Vend (90d)"])}
             icon={ShoppingCart}
           />
-          <KpiMini
+          <KpiStat
             label="Velocidad"
             value={`${num2(row["Velocidad (uds/día)"])} u/d`}
             icon={Activity}
           />
-          <KpiMini
+          <KpiStat
             label="Vel Reciente"
             value={`${num2(row["Vel últimos 30d"])} u/d`}
             icon={LineChart}
             tone={n(row["Vel últimos 30d"]) > n(row["Velocidad (uds/día)"]) ? "success" : "danger"}
           />
           {/* Row 2 */}
-          <KpiMini
+          <KpiStat
             label="Stock Disp"
             value={num(row["Stock Disp"])}
             icon={Package}
             tone={n(row["Stock Disp"]) > 0 ? "success" : "danger"}
           />
-          <KpiMini
+          <KpiStat
             label="Stock Reserv"
             value={num(row["Stock Reserv"])}
             icon={Box}
           />
-          <KpiMini
+          <KpiStat
             label="Stock Almacén"
             value={num(row["Stock Almacén"])}
             icon={Box}
           />
-          <KpiMini
+          <KpiStat
             label="Cobertura"
             value={s(row["Cobertura"]) || "—"}
             icon={CalendarDays}
@@ -515,7 +524,7 @@ export function ProductDetailPanel({
             <AlertTriangle className="h-6 w-6 text-danger mb-3 opacity-80" />
             <p className="text-sm font-bold text-fg">Error al cargar el historial</p>
             <p className="text-xs text-muted mt-1 max-w-sm">
-              Es posible que el código SKU ({sku}) contenga caracteres especiales que el servidor no procesa correctamente (como &quot;/&quot;), o hubo un problema de red.
+              Es posible que el código SKU ({sku}) contenga caracteres especiales que el servidor no procesa correctamente (como "/"), o hubo un problema de red.
             </p>
           </div>
         ) : historyData?.points && historyData.points.length > 0 ? (
