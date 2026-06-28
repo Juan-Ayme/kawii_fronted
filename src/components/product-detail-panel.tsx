@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -18,7 +19,6 @@ import {
   Package,
   Box,
   ShoppingCart,
-  Target,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
@@ -34,7 +34,7 @@ import {
   getClassificationMeta,
   shortClasif,
 } from "@/components/ui/classification";
-import { SkuHistoryChart } from "@/components/charts/sku-history-chart";
+const SkuHistoryChart = dynamic(() => import("@/components/charts/sku-history-chart").then(mod => mod.SkuHistoryChart), { ssr: false });
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
@@ -51,7 +51,7 @@ const n = (v: unknown): number => {
   return 0;
 };
 
-function generateProductInsight(row: any): { text: string; tone: "success" | "warning" | "danger" | "info" } {
+function generateProductInsight(row: Record<string, unknown>): { text: string; tone: "success" | "warning" | "danger" | "info" } {
   const rotacion = n(row["% Rotación Stock"]);
   const clasificacion = s(row["Clasificación"]);
   const diasAgotado = n(row["Días Agotado"]);
@@ -515,7 +515,7 @@ export function ProductDetailPanel({
             <AlertTriangle className="h-6 w-6 text-danger mb-3 opacity-80" />
             <p className="text-sm font-bold text-fg">Error al cargar el historial</p>
             <p className="text-xs text-muted mt-1 max-w-sm">
-              Es posible que el código SKU ({sku}) contenga caracteres especiales que el servidor no procesa correctamente (como "/"), o hubo un problema de red.
+              Es posible que el código SKU ({sku}) contenga caracteres especiales que el servidor no procesa correctamente (como &quot;/&quot;), o hubo un problema de red.
             </p>
           </div>
         ) : historyData?.points && historyData.points.length > 0 ? (

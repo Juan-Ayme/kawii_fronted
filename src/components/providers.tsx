@@ -13,7 +13,7 @@ import { AuthProvider } from "@/components/auth-context";
 const config: QueryClientConfig = {
   defaultOptions: {
     queries: {
-      staleTime: 30_000,
+      staleTime: 300_000,
       refetchOnWindowFocus: false,
       retry: (failureCount, error) => {
         // No reintentar si la API no responde o devuelve 4xx.

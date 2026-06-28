@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import { Coins, Package, Receipt, Store, Wallet, TrendingUp, BarChart3, PieChart, Trophy } from "lucide-react";
 import {
@@ -12,19 +13,17 @@ import {
   getTopProducts,
 } from "@/lib/api";
 import { money, moneyCompact, num, dayLabel } from "@/lib/format";
-import { PageHeader } from "@/components/ui/page-header";
 import { DateRangeSelect } from "@/components/ui/date-range-select";
 import { KpiStat } from "@/components/ui/kpi-stat";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ErrorState, EmptyState } from "@/components/ui/states";
-import { TimeSeriesChart } from "@/components/charts/time-series-chart";
-import { CategoryBarChart } from "@/components/charts/category-bar-chart";
-import { DonutChart } from "@/components/charts/donut-chart";
+const TimeSeriesChart = dynamic(() => import("@/components/charts/time-series-chart").then(mod => mod.TimeSeriesChart), { ssr: false });
+const CategoryBarChart = dynamic(() => import("@/components/charts/category-bar-chart").then(mod => mod.CategoryBarChart), { ssr: false });
+const DonutChart = dynamic(() => import("@/components/charts/donut-chart").then(mod => mod.DonutChart), { ssr: false });
 import { useSucursal } from "@/components/sucursal-context";
 import { MetricGauge } from "@/components/ui/metric-gauge";
 import type { TopProduct } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 export default function DashboardPage() {
   const [days, setDays] = useState(30);
